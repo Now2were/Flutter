@@ -78,6 +78,16 @@ void main() {
       'https://api.gymfit-api.com/v2/exercises/search?query=push&muscleGroup=Chest',
     );
     expect(adapter.request?.headers['X-Api-Key'], 'test-key');
+    await tester.scrollUntilVisible(
+      find.text('Push Up'),
+      180,
+      scrollable: find
+          .descendant(
+            of: find.byType(ListView),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
     await Scrollable.ensureVisible(
       tester.element(find.text('Push Up')),
       alignment: 0.5,
