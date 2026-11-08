@@ -10,27 +10,32 @@ Future<void> main() async {
 }
 
 const muscles = {
-  'abdominals': 'Пресс',
-  'abductors': 'Отводящие мышцы бедра',
-  'adductors': 'Приводящие мышцы бедра',
-  'biceps': 'Бицепсы',
-  'calves': 'Икры',
-  'chest': 'Грудь',
-  'forearms': 'Предплечья',
-  'glutes': 'Ягодицы',
-  'hamstrings': 'Задняя поверхность бедра',
-  'lats': 'Широчайшие мышцы спины',
-  'lower_back': 'Поясница',
-  'middle_back': 'Средняя часть спины',
-  'neck': 'Шея',
-  'quadriceps': 'Квадрицепсы',
-  'traps': 'Трапеции',
-  'triceps': 'Трицепсы',
+  'Abs': 'Пресс',
+  'Adductors': 'Приводящие мышцы бедра',
+  'Biceps': 'Бицепсы',
+  'Calves': 'Икры',
+  'Chest': 'Грудь',
+  'Forearms': 'Предплечья',
+  'Glutes': 'Ягодицы',
+  'Hamstrings': 'Задняя поверхность бедра',
+  'Hip flexors': 'Сгибатели бедра',
+  'Lats': 'Широчайшие мышцы спины',
+  'Lower back': 'Поясница',
+  'Neck': 'Шея',
+  'Obliques': 'Косые мышцы живота',
+  'Quadriceps': 'Квадрицепсы',
+  'Rotator cuff': 'Вращательная манжета плеча',
+  'Serratus': 'Зубчатые мышцы',
+  'Shoulders': 'Плечи',
+  'Tibialis': 'Передние мышцы голени',
+  'Trapezius': 'Трапеции',
+  'Triceps': 'Трицепсы',
+  'Upper back': 'Верхняя часть спины',
 };
 const levels = {
-  'beginner': 'Начальный',
-  'intermediate': 'Средний',
-  'expert': 'Продвинутый',
+  'Beginner': 'Начальный',
+  'Intermediate': 'Средний',
+  'Advanced': 'Продвинутый',
 };
 
 class ExerciseApp extends StatelessWidget {
@@ -107,20 +112,17 @@ class _CatalogState extends State<Catalog> {
     }
   }
 
-  String networkMessage(DioException exception) {
-    final response = exception.response;
-    final data = response?.data;
-    final reason = data is Map ? data['error'].toString().toLowerCase() : '';
-    if (reason.contains('api key') || response?.statusCode == 401) {
-      return 'Ключ API не принят. Проверьте его в настройках.';
+  Future<void> openExercise(Exercise exercise) async {
+    if (exercise.gymFitId.isNotEmpty && credentials.key.isEmpty) {
+      await editKey();
+      if (!mounted || credentials.key.isEmpty) return;
     }
-    return switch (response?.statusCode) {
-      400 => 'Сервис отклонил запрос. Проверьте параметры поиска.',
-      403 => 'API отказал в доступе. Проверьте ключ и права аккаунта.',
-      429 => 'Достигнут лимит запросов. Попробуйте позже.',
-      final int code => 'Ошибка сервиса (HTTP $code). Попробуйте позже.',
-      null => 'Нет ответа от сервера. Проверьте подключение и повторите поиск.',
-    };
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            ExerciseDetails(exercise: exercise, favorites: favorites),
+      ),
+    );
   }
 
   @override
@@ -165,7 +167,7 @@ class _CatalogState extends State<Catalog> {
                       const SizedBox(height: 12),
                       if (favorites.items.isEmpty)
                         const Text(
-                          'Сохраняйте упражнения из поиска, чтобы открыть их без сети.',
+                          'Сохраняйте упражнения из поиска, чтобы быстро вернуться к ним.',
                         ),
                       ...favorites.items.map(exerciseTile),
                     ],
@@ -186,6 +188,7 @@ class _CatalogState extends State<Catalog> {
     const SizedBox(height: 16),
     TextField(
       controller: name,
+      maxLength: 100,
       enabled: !busy,
       onSubmitted: (_) => search(),
       textInputAction: TextInputAction.search,
@@ -193,6 +196,7 @@ class _CatalogState extends State<Catalog> {
         border: OutlineInputBorder(),
         labelText: 'Название',
         hintText: 'Например, push up',
+        counterText: '',
         prefixIcon: Icon(Icons.fitness_center),
       ),
     ),
@@ -237,7 +241,7 @@ class _CatalogState extends State<Catalog> {
         ...found.map(exerciseTile),
       ]
     else if (credentials.key.isEmpty)
-      const Text('Для первого поиска понадобится ключ API Ninjas.'),
+      const Text('Для первого поиска понадобится ключ GymFit API.'),
   ];
 
   Widget filter(
@@ -270,24 +274,36 @@ class _CatalogState extends State<Catalog> {
       leading: const Icon(Icons.fitness_center),
       title: Text(exercise.name),
       subtitle: Text(summary(exercise)),
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) =>
-              ExerciseDetails(exercise: exercise, favorites: favorites),
-        ),
-      ),
+      onTap: () => openExercise(exercise),
       trailing: FavoriteButton(exercise: exercise, favorites: favorites),
     ),
   );
 }
 
 String summary(Exercise exercise) {
-  final muscle = exercise.field('muscle');
   final level = exercise.field('difficulty');
+  final gymFitLevel = level == 'expert' ? 'Advanced' : level;
+  final translatedLevel = levels.entries
+      .where((entry) => entry.key.toLowerCase() == gymFitLevel.toLowerCase())
+      .firstOrNull
+      ?.value;
   return [
-    muscles[muscle] ?? muscle,
-    levels[level] ?? level,
+    ...exercise.muscleGroups.map((muscle) => muscles[muscle] ?? muscle),
+    translatedLevel ?? level,
   ].where((value) => value.isNotEmpty).join(' · ');
+}
+
+String networkMessage(Object? exception) {
+  if (exception is! DioException) return 'Не удалось прочитать ответ сервера.';
+  return switch (exception.response?.statusCode) {
+    400 => 'Сервис отклонил запрос. Проверьте параметры поиска.',
+    401 => 'GymFit не принял ключ API. Проверьте его в настройках.',
+    403 => 'GymFit отказал в доступе. Проверьте ключ и права аккаунта.',
+    404 => 'Упражнение больше недоступно.',
+    429 => 'Достигнут лимит запросов. Попробуйте позже.',
+    final int code => 'Ошибка сервиса (HTTP $code). Попробуйте позже.',
+    null => 'Нет ответа от сервера. Проверьте подключение и повторите запрос.',
+  };
 }
 
 class KeyDialog extends StatefulWidget {
@@ -311,13 +327,13 @@ class _KeyDialogState extends State<KeyDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Ключ API Ninjas'),
+    title: const Text('Ключ GymFit API'),
     content: Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Скопируйте ключ из аккаунта на api-ninjas.com. Введённый ключ действует до закрытия приложения.',
+          'Скопируйте ключ из кабинета на gymfit-api.com. Ключ нужно вводить заново после перезапуска.',
         ),
         const SizedBox(height: 12),
         TextField(
@@ -373,7 +389,7 @@ class FavoriteButton extends StatelessWidget {
   );
 }
 
-class ExerciseDetails extends StatelessWidget {
+class ExerciseDetails extends StatefulWidget {
   const ExerciseDetails({
     super.key,
     required this.exercise,
@@ -383,51 +399,79 @@ class ExerciseDetails extends StatelessWidget {
   final Favorites favorites;
 
   @override
+  State<ExerciseDetails> createState() => _ExerciseDetailsState();
+}
+
+class _ExerciseDetailsState extends State<ExerciseDetails> {
+  late Future<Exercise> details = loadDetails();
+
+  Future<Exercise> loadDetails() {
+    final exercise = widget.exercise;
+    if (exercise.gymFitId.isEmpty) return Future.value(exercise);
+    return services<ExerciseRepository>().details(exercise.gymFitId);
+  }
+
+  @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
       title: const Text('Упражнение'),
-      actions: [FavoriteButton(exercise: exercise, favorites: favorites)],
+      actions: [
+        FavoriteButton(exercise: widget.exercise, favorites: widget.favorites),
+      ],
     ),
     body: SafeArea(
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 720),
-          child: ListView(
-            padding: const EdgeInsets.all(24),
-            children: [
-              Text(
-                exercise.name,
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
-              const SizedBox(height: 8),
-              Text(summary(exercise)),
-              if (exercise.equipment.isNotEmpty) ...[
-                const SizedBox(height: 20),
+          child: FutureBuilder<Exercise>(
+            future: details,
+            builder: (context, snapshot) => ListView(
+              padding: const EdgeInsets.all(24),
+              children: [
                 Text(
-                  'Инвентарь',
-                  style: Theme.of(context).textTheme.titleLarge,
+                  snapshot.data?.name ?? widget.exercise.name,
+                  style: Theme.of(context).textTheme.headlineMedium,
                 ),
-                Text(exercise.equipment),
+                const SizedBox(height: 8),
+                if (snapshot.connectionState != ConnectionState.done)
+                  const LinearProgressIndicator()
+                else if (snapshot.hasError) ...[
+                  Text(networkMessage(snapshot.error)),
+                  OutlinedButton(
+                    onPressed: () => setState(() => details = loadDetails()),
+                    child: const Text('Повторить'),
+                  ),
+                ] else if (snapshot.data case final exercise?) ...[
+                  Text(summary(exercise)),
+                  if (exercise.equipment.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    Text(
+                      'Инвентарь',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    Text(exercise.equipment),
+                  ],
+                  const SizedBox(height: 20),
+                  Text(
+                    'Техника выполнения',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  SelectableText(
+                    exercise.instructions.isEmpty
+                        ? 'Описание отсутствует.'
+                        : exercise.instructions,
+                  ),
+                  if (exercise.field('safety_info').isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    Text(
+                      'Рекомендации по безопасности',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    SelectableText(exercise.field('safety_info')),
+                  ],
+                ],
               ],
-              const SizedBox(height: 20),
-              Text(
-                'Техника выполнения',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              SelectableText(
-                exercise.field('instructions').isEmpty
-                    ? 'Описание отсутствует.'
-                    : exercise.field('instructions'),
-              ),
-              if (exercise.field('safety_info').isNotEmpty) ...[
-                const SizedBox(height: 20),
-                Text(
-                  'Рекомендации по безопасности',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                SelectableText(exercise.field('safety_info')),
-              ],
-            ],
+            ),
           ),
         ),
       ),

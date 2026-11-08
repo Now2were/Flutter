@@ -7,9 +7,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
 final services = GetIt.instance;
+const gymFitOrigin = 'https://api.gymfit-api.com';
+const webApiPrefix = '/api/gymfit';
 
 class ApiCredentials {
-  String key = const String.fromEnvironment('API_NINJAS_KEY').trim();
+  String key = '';
 }
 
 class ApiKeyInterceptor extends Interceptor {
@@ -18,7 +20,13 @@ class ApiKeyInterceptor extends Interceptor {
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
-    if (options.uri.origin == 'https://api.api-ninjas.com' &&
+    final uri = options.uri;
+    final isLocalWebApi =
+        kIsWeb &&
+        const {'127.0.0.1', 'localhost'}.contains(uri.host) &&
+        uri.origin == Uri.base.origin &&
+        uri.path.startsWith('$webApiPrefix/');
+    if ((uri.origin == gymFitOrigin || isLocalWebApi) &&
         credentials.key.isNotEmpty) {
       options.headers['X-Api-Key'] = credentials.key;
     }
@@ -33,7 +41,7 @@ Future<void> configureServices() async {
     () =>
         Dio(
             BaseOptions(
-              baseUrl: 'https://api.api-ninjas.com',
+              baseUrl: kIsWeb ? Uri.base.origin : gymFitOrigin,
               connectTimeout: const Duration(seconds: 10),
               receiveTimeout: const Duration(seconds: 15),
               followRedirects: false,
@@ -62,35 +70,72 @@ class Exercise {
 
   String field(String name) => data[name] is String ? data[name] as String : '';
   String get name => field('name');
-  String get id => jsonEncode([name, field('muscle'), field('type')]);
+  String get gymFitId => field('id');
+  String get id => gymFitId.isNotEmpty
+      ? gymFitId
+      : jsonEncode([name, field('muscle'), field('type')]);
+  Map<String, dynamic> get favoriteData =>
+      gymFitId.isEmpty ? data : {'id': gymFitId, 'name': name};
+  List<String> get muscleGroups {
+    final groups = data['primaryGroups'];
+    return groups is List
+        ? groups.whereType<String>().toList()
+        : [field('muscle')];
+  }
+
+  String get instructions {
+    final steps = data['instructions'];
+    if (steps is! List) return field('instructions');
+    return steps
+        .whereType<Map<String, dynamic>>()
+        .map((step) {
+          final order = step['order'];
+          final description = step['description'];
+          return order is int ? '$order. $description' : '$description';
+        })
+        .join('\n\n');
+  }
+
   String get equipment {
     final items = data['equipments'];
-    return items is List
-        ? items.whereType<String>().join(', ')
-        : field('equipment');
+    if (items is List && items.isNotEmpty) {
+      return items
+          .map((item) => item is Map ? item['equipment'] : item)
+          .whereType<String>()
+          .join(', ');
+    }
+    return field('equipment');
   }
 }
 
 class ExerciseRepository {
   ExerciseRepository(this.dio);
   final Dio dio;
+  String get _path => '${kIsWeb ? webApiPrefix : ''}/v2/exercises';
 
   Future<List<Exercise>> search({
     required String name,
     String? muscle,
     String? difficulty,
   }) async {
-    final response = await dio.get<List<dynamic>>(
-      '/v1/exercises',
+    final response = await dio.get<Map<String, dynamic>>(
+      '$_path/search',
       queryParameters: {
-        if (name.trim().isNotEmpty) 'name': name.trim(),
-        'muscle': ?muscle,
+        if (name.trim().isNotEmpty) 'query': name.trim(),
+        'muscleGroup': ?muscle,
         'difficulty': ?difficulty,
       },
     );
-    return response.data!
+    return (response.data!['results'] as List)
         .map((item) => Exercise(item as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<Exercise> details(String id) async {
+    final response = await dio.get<Map<String, dynamic>>(
+      '$_path/${Uri.encodeComponent(id)}',
+    );
+    return Exercise(response.data!);
   }
 }
 
@@ -113,7 +158,9 @@ class Favorites extends ChangeNotifier {
     _saving = true;
     try {
       final next = Map.of(_items);
-      if (next.remove(exercise.id) == null) next[exercise.id] = exercise;
+      if (next.remove(exercise.id) == null) {
+        next[exercise.id] = Exercise(exercise.favoriteData);
+      }
       final saved = await preferences.setStringList(
         'exercises',
         next.values.map((item) => jsonEncode(item.data)).toList(),

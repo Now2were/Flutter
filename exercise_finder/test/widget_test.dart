@@ -18,17 +18,30 @@ class ExerciseAdapter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     request = options;
+    final exercise = {
+      'id': 'push-up',
+      'name': 'Push Up',
+      'category': 'Strength',
+      'primaryGroups': ['Chest'],
+      'difficulty': 'Beginner',
+      'equipment': 'Bodyweight',
+    };
     return ResponseBody.fromString(
-      jsonEncode([
-        {
-          'name': 'Push Up',
-          'type': 'strength',
-          'muscle': 'chest',
-          'difficulty': 'beginner',
-          'instructions': 'Lower your chest and press back up.',
-          'equipments': ['exercise mat'],
-        },
-      ]),
+      jsonEncode(
+        options.uri.path.endsWith('/push-up')
+            ? {
+                ...exercise,
+                'instructions': [
+                  {
+                    'order': 1,
+                    'description': 'Lower your chest and press back up.',
+                  },
+                ],
+              }
+            : {
+                'results': [exercise],
+              },
+      ),
       200,
       headers: {
         Headers.contentTypeHeader: [Headers.jsonContentType],
@@ -62,17 +75,23 @@ void main() {
 
     expect(
       adapter.request?.uri.toString(),
-      'https://api.api-ninjas.com/v1/exercises?name=push&muscle=chest',
+      'https://api.gymfit-api.com/v2/exercises/search?query=push&muscleGroup=Chest',
     );
     expect(adapter.request?.headers['X-Api-Key'], 'test-key');
-    await tester.ensureVisible(find.text('Push Up'));
+    await Scrollable.ensureVisible(
+      tester.element(find.text('Push Up')),
+      alignment: 0.5,
+    );
     await tester.tap(find.text('Push Up'));
     await tester.pumpAndSettle();
-    expect(find.text('Lower your chest and press back up.'), findsOneWidget);
+    expect(adapter.request?.uri.path, '/v2/exercises/push-up');
+    expect(adapter.request?.headers['X-Api-Key'], 'test-key');
+    expect(find.text('1. Lower your chest and press back up.'), findsOneWidget);
     await tester.tap(find.byTooltip('Добавить в избранное').last);
     await tester.pumpAndSettle();
     final restored = Favorites(services<SharedPreferences>());
     expect(restored.items.single.name, 'Push Up');
+    expect(restored.items.single.data, {'id': 'push-up', 'name': 'Push Up'});
     restored.dispose();
 
     await tester.pageBack();
